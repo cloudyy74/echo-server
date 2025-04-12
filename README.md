@@ -54,7 +54,8 @@ msg: 1, bytes: 5, alarm count: 2     ## kill -HUP <pid>
 $ echo "test after daemonize" > /tmp/echo_server.fifo
 $ kill -USR1 <pid>
 $ kill -INT <pid>
-$ cat /tmp/echo_server.logdaemonize by signhup
+$ cat /tmp/echo_server.log
+daemonize by signhup
 msg: 1, bytes: 5, alarm count: 2
 test after daemonize
 msg: 2, bytes: 26, alarm count: 2
