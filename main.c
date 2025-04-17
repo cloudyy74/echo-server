@@ -20,7 +20,6 @@ int alarm_time = ALARM_TIME;
 
 bool is_daemon = false;
 
-volatile sig_atomic_t need_exit = 0;
 volatile sig_atomic_t exit_mode = 0;
 volatile sig_atomic_t alarm_flag = 0;
 volatile sig_atomic_t sigusr_flag = 0;
@@ -69,11 +68,9 @@ void print_stats() {
 void handle_signal(int sig) {
     switch (sig) {
         case SIGINT:
-            need_exit = 1;
             exit_mode = 1;
             break;
         case SIGTERM:
-            need_exit = 1;
             exit_mode = 2;
             break;
         case SIGALRM:
@@ -85,10 +82,34 @@ void handle_signal(int sig) {
         case SIGHUP:
             sighup_flag = 1;
             break;
-        case SIGQUIT:
+        default:
             break;
     }
 
+}
+
+void process_deferred() {
+    if (alarm_flag) {
+        printf("diag msg: waiting for data\n");
+        fflush(stdout);
+        alarm_count++;
+        alarm_flag = 0;
+        alarm(alarm_time);
+    }
+    if (sighup_flag) {
+        if (!is_daemon) {
+            daemonize();
+            printf("daemonized via SIGHUP\n");
+            fflush(stdout);
+            print_stats();
+            alarm(alarm_time);
+        }
+        sighup_flag = 0;
+    }
+    if (sigusr_flag) {
+        print_stats();
+        sigusr_flag = 0;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -140,7 +161,7 @@ int main(int argc, char *argv[]) {
     if (sigaction(SIGALRM, &sa, NULL) == -1) { perror("sigaction SIGALRM"); exit(EXIT_FAILURE); }
     if (sigaction(SIGUSR1, &sa, NULL) == -1) { perror("sigaction SIGUSR1"); exit(EXIT_FAILURE); }
     if (sigaction(SIGHUP,  &sa, NULL) == -1) { perror("sigaction SIGHUP");  exit(EXIT_FAILURE); }
-    if (sigaction(SIGQUIT, &sa, NULL) == -1) { perror("sigaction SIGQUIT"); exit(EXIT_FAILURE); }
+    signal(SIGQUIT, SIG_IGN);
 
     if (daemon_mode) {
         daemonize();
@@ -148,37 +169,15 @@ int main(int argc, char *argv[]) {
 
     alarm(alarm_time);
 
-    while (!need_exit) {
+    while (!exit_mode) {
+        process_deferred();
         int fd = open(fifo_name, O_RDONLY);
         if (fd == -1) {
-            if (errno != EINTR) {
-                perror("open error");
-                exit(EXIT_FAILURE);
+            if (errno == EINTR) {
+                continue;
             }
-            if (need_exit) {
-                break;
-            }
-            if (alarm_flag) {
-                printf("diag msg: waiting for data\n");
-                fflush(stdout);
-                alarm_count++;
-                alarm_flag = 0;
-                alarm(alarm_time);
-            }
-            if (sighup_flag) {
-                if (!is_daemon) {
-                    daemonize();
-                    printf("daemonize by signhup\n");
-                    fflush(stdout);
-                    print_stats();
-                }
-                sighup_flag = 0;
-            }
-            if (sigusr_flag) {
-                print_stats();
-                sigusr_flag = 0;
-            }
-            continue;
+            perror("open error");
+            exit(EXIT_FAILURE);
         }
         char buf[BUFFER_SIZE];
         size_t total_read = 0;
@@ -192,45 +191,23 @@ int main(int argc, char *argv[]) {
                     close(fd);
                     exit(EXIT_FAILURE);
                 }
-                if (need_exit) {
-                    if (exit_mode == 2) {
-                        close(fd);
-                        break;
+                if (exit_mode == 2) {
+                    if (close(fd) < 0) {
+                        perror("close error");
+                        exit(EXIT_FAILURE);
                     }
-                    else {
-                        continue;
-                    }
+                    break;
                 }
-                if (alarm_flag) {
-                    printf("diag msg: waiting for data\n");
-                    fflush(stdout);
-                    alarm_count++;
-                    alarm_flag = 0;
-                    alarm(alarm_time);
-                }
-                if (sighup_flag) {
-                    if (!is_daemon) {
-                        daemonize();
-                        printf("daemonize by signhup\n");
-                        fflush(stdout);
-                        print_stats();
-                    }
-                    sighup_flag = 0;
-                }
-                if (sigusr_flag) {
-                    print_stats();
-                    sigusr_flag = 0;
-                }
+                process_deferred();
                 continue;
             }
             buf[n] = '\0';
             printf("%s", buf);
             fflush(stdout);
             total_read += n;
-            if (n > 0) {
-                last_char = buf[n - 1];
-            }
+            last_char = buf[n - 1];
         }
+
         if (exit_mode == 2) {
             break;
         }
