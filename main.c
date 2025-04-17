@@ -87,7 +87,7 @@ void handle_signal(int sig) {
     }
 }
 
-void process_deferred() {
+void external_handler() {
     if (alarm_flag) {
         printf("diag msg: waiting for data\n");
         fflush(stdout);
@@ -168,7 +168,7 @@ int main(int argc, char *argv[]) {
     alarm(alarm_time);
 
     while (!exit_mode) {
-        process_deferred();
+        external_handler();
         int fd = open(fifo_name, O_RDONLY);
         if (fd == -1) {
             if (errno == EINTR) {
@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
                     }
                     break;
                 }
-                process_deferred();
+                external_handler();
                 continue;
             }
             buf[n] = '\0';
