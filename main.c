@@ -85,7 +85,6 @@ void handle_signal(int sig) {
         default:
             break;
     }
-
 }
 
 void process_deferred() {
@@ -95,8 +94,7 @@ void process_deferred() {
         alarm_count++;
         alarm_flag = 0;
         alarm(alarm_time);
-    }
-    if (sighup_flag) {
+    } if (sighup_flag) {
         if (!is_daemon) {
             daemonize();
             printf("daemonized via SIGHUP\n");
